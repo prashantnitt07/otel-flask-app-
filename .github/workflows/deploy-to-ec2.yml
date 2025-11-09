@@ -1,0 +1,63 @@
+name: Deploy OTEL Flask App to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rsync and SSH client
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
+
+      - name: Deploy Docker app to EC2
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          echo "🔑 Setting up SSH key"
+          echo "$SSH_PRIVATE_KEY" > key.pem
+          chmod 600 key.pem
+
+          echo "📁 Syncing files to EC2"
+          ssh -o StrictHostKeyChecking=no -i key.pem $SSH_USER@$SSH_HOST "mkdir -p ~/otel-flask-app"
+          rsync -avz --exclude '.git' -e "ssh -o StrictHostKeyChecking=no -i key.pem" ./ $SSH_USER@$SSH_HOST:~/otel-flask-app/
+
+          echo "🐳 Building and deploying Docker container"
+          ssh -o StrictHostKeyChecking=no -i key.pem $SSH_USER@$SSH_HOST << 'EOF'
+            set -e
+            cd ~/otel-flask-app
+
+            # Install Docker if not already installed
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+
+            # Stop and remove any previous container
+            if [ "$(sudo docker ps -q -f name=otel-flask-app)" ]; then
+              sudo docker stop otel-flask-app && sudo docker rm otel-flask-app
+            fi
+
+            # Build new image
+            sudo docker build -t otel-flask-app:latest .
+
+            # Run new container
+            sudo docker run -d \
+              --name otel-flask-app \
+              -p 7000:7000 \
+              -p 9464:9464 \
+              otel-flask-app:latest
+
+            echo "✅ Deployment completed successfully"
+          EOF
