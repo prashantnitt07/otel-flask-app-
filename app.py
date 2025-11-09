@@ -1,31 +1,42 @@
 from flask import Flask, jsonify
 from opentelemetry import metrics
-from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.sdk.resources import Resource
+
+import time
 
 app = Flask(__name__)
 
-# OTEL setup
-reader = PrometheusMetricReader()
-provider = MeterProvider(metric_readers=[reader])
-set_meter_provider(provider)
+# ---- OTEL Prometheus Exporter ----
+resource = Resource(attributes={"service.name": "otel-flask-app"})
 
-meter = metrics.get_meter("flask-app")
+# Create a Prometheus Metric Reader
+prometheus_reader = PrometheusMetricReader(port=9464, host="0.0.0.0")
 
+# Create the Meter Provider with Prometheus reader
+provider = MeterProvider(resource=resource, metric_readers=[prometheus_reader])
+metrics.set_meter_provider(provider)
+meter = metrics.get_meter("flask_app_meter")
+
+# ---- Example metrics ----
 request_counter = meter.create_counter(
-    name="flask_request_count",
-    description="Number of requests received",
+    name="flask_app_requests_total",
+    description="Total number of requests received",
 )
 
 @app.route("/")
-def index():
-    request_counter.add(1, {"endpoint": "/"})
-    return jsonify({"message": "Welcome to OTEL Flask app!"})
+def home():
+    request_counter.add(1)
+    return jsonify({"message": "Hello from OTEL Flask!"})
 
-@app.route("/vote")
-def vote():
-    request_counter.add(1, {"endpoint": "/vote"})
-    return jsonify({"message": "Vote received!"})
+@app.route("/work")
+def work():
+    start = time.time()
+    time.sleep(0.3)
+    duration = time.time() - start
+    return jsonify({"work_duration": duration})
 
-# This exposes metrics automatically at /metrics (handled by OTEL exporter)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=7000)
