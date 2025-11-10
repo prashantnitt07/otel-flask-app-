@@ -51,4 +51,4 @@ def data():
 if __name__ == "__main__":
     # Prometheus metrics exposed at :9464/metrics
     start_http_server(9464)
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=7000)
