@@ -22,6 +22,8 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
+          cd /home/ubuntu || exit 1
+
           # Install Docker if not installed
           if ! command -v docker &> /dev/null
           then
@@ -33,14 +35,26 @@ jobs:
             sudo usermod -aG docker ubuntu
           fi
 
-          cd /home/ubuntu || exit 1
+          # Clone repo if missing
           if [ ! -d "otel-flask-app" ]; then
+            echo "Cloning repository..."
             git clone https://github.com/prashantnitt07/otel-flask-app-.git otel-flask-app
+          else
+            echo "Updating repository..."
+            cd otel-flask-app
+            # if .git missing, reclone
+            if [ ! -d ".git" ]; then
+              cd ..
+              rm -rf otel-flask-app
+              git clone https://github.com/prashantnitt07/otel-flask-app-.git otel-flask-app
+            else
+              git pull
+            fi
           fi
-          cd otel-flask-app
-          git pull
 
-          # Build and run container
+          cd /home/ubuntu/otel-flask-app
+
+          echo "Building and running Docker container..."
           sudo docker build -t otel-flask-app .
           sudo docker stop otel-flask || true
           sudo docker rm otel-flask || true
